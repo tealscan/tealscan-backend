@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import casparser
 import shutil
@@ -8,10 +8,9 @@ from datetime import date
 
 app = FastAPI()
 
-# Allow your React app to talk to this Python app
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace * with your Vercel URL
+    allow_origins=["*"], # Allows your React app to talk to this
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,18 +21,12 @@ def get_asset_class(name):
     if "GOLD" in n: return "Gold"
     return "Equity"
 
-@app.get("/")
-def home():
-    return {"status": "TealScan Brain is Active"}
-
 @app.post("/scan")
 async def scan_portfolio(file: UploadFile = File(...), password: str = Form(...)):
     try:
-        # Save file temporarily
         with open("temp.pdf", "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Parse PDF
         data = casparser.read_cas_pdf("temp.pdf", password, force_pdfminer=True)
         
         portfolio = []
@@ -52,7 +45,6 @@ async def scan_portfolio(file: UploadFile = File(...), password: str = Form(...)
                 is_regular = "DIRECT" not in name.upper()
                 loss = val * 0.01 if is_regular else 0
                 
-                # XIRR Calculation
                 dates, amts = [], []
                 for txn in scheme.transactions:
                     amt = float(txn.amount or 0)
@@ -61,7 +53,6 @@ async def scan_portfolio(file: UploadFile = File(...), password: str = Form(...)
                     if any(x in desc for x in ["PURCHASE", "SIP"]): amts.append(amt * -1)
                     else: amts.append(amt)
                     dates.append(txn.date)
-                
                 dates.append(date.today())
                 amts.append(val)
                 
@@ -71,29 +62,22 @@ async def scan_portfolio(file: UploadFile = File(...), password: str = Form(...)
                 except: my_xirr = 0
                 
                 portfolio.append({
-                    "fund_name": name,
+                    "name": name,
                     "category": get_asset_class(name),
                     "value": val,
                     "type": "Regular" if is_regular else "Direct",
                     "xirr": round(my_xirr, 2),
                     "loss": round(loss, 0)
                 })
-                
                 total_val += val
                 total_invested += cost
                 commission_loss += loss
                 
-        # Clean up
-        os.remove("temp.pdf")
-        
         return {
             "status": "success",
-            "summary": {
-                "net_worth": total_val,
-                "total_invested": total_invested,
-                "total_gain": total_val - total_invested,
-                "hidden_fees": commission_loss
-            },
+            "net_worth": total_val,
+            "total_gain": total_val - total_invested,
+            "hidden_fees": commission_loss,
             "funds": portfolio
         }
 
